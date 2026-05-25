@@ -1,0 +1,11 @@
+fastapi
+uvicorn
+sqlalchemy[asyncio]
+asyncpg
+alembic
+redis
+pydantic
+pydantic-settings
+httpx
+prometheus-client
+python-dotenv
