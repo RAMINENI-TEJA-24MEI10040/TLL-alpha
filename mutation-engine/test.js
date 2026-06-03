@@ -15,10 +15,10 @@ const mutations = engine.mutate({
 });
 
 console.log(`Total mutations generated: ${mutations.length}`);
-console.log(`First five mutations`);
+console.log(`First fifty mutations`);
 
 
-mutations.slice(0, 5).forEach((m, i) => {
+mutations.slice(0, 50).forEach((m, i) => {
     console.log(`\n[${i+1}] Strategy: ${m.strategy}`);
     console.log(`    Reason:   ${m.reason}`);
 });
