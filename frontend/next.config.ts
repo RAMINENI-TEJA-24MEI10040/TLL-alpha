@@ -1,7 +1,6 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-<<<<<<< HEAD
   // Disabled for Docker production builds (re-enable standalone for containers)
   // output: "standalone",
 
@@ -29,10 +28,3 @@ const nextConfig: NextConfig = {
 
 export default nextConfig;
 
-
-=======
-  /* config options here */
-};
-
-export default nextConfig;
->>>>>>> abcfc051e5e420f24edeada950b08e54fa460a1f
