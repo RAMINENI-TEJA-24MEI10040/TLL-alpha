@@ -1,0 +1,26 @@
+{
+  "report_id": "7f3cd291-e66f-4532-8fe2-59eb8eddcc9b",
+  "scan_name": "API-Key Test Scan",
+  "target_url": "https://httpbin.org",
+  "created_at": "2026-06-07T16:41:21.449339",
+  "metadata": {
+    "similarity_threshold": 0.65,
+    "reference_role": "admin",
+    "total_diffs": 0,
+    "anomaly_diffs": 0
+  },
+  "summary": {
+    "total_endpoints": 0,
+    "total_requests": 0,
+    "total_issues": 0,
+    "critical": 0,
+    "high": 0,
+    "medium": 0,
+    "low": 0,
+    "info": 0,
+    "duration_seconds": 0.0,
+    "scan_start": "2026-06-07T16:41:21.448370",
+    "scan_end": "2026-06-07T16:41:21.449125"
+  },
+  "issues": []
+}

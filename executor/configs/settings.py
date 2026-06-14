@@ -45,7 +45,14 @@ class Settings(BaseSettings):
     @property
     def cors_origins(self) -> List[str]:
         if not self.CORS_ORIGINS:
-            return ["*"]
+            return [
+                "http://localhost:3000",
+                "http://127.0.0.1:3000",
+                "http://localhost:3001",
+                "http://127.0.0.1:3001",
+                "https://integrated-work.netlify.app",
+                "https://jyotasana17-integrated-work.netlify.app"
+            ]
         return [origin.strip() for origin in self.CORS_ORIGINS.split(",") if origin.strip()]
 
     # Worker Configuration

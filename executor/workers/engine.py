@@ -155,9 +155,22 @@ class WorkerEngine:
             if task_status == TaskStatus.FAILED.value:
                 await self._handle_retry(payload, error_message)
 
+            # 4. Evaluate scan completion after retry logic updates status (avoid premature completion)
+            await self._evaluate_scan_completion(payload.scan_id)
+
+        except asyncio.CancelledError:
+            logger.warning(f"Task {payload.task_id} was cancelled during execution. Resetting status to QUEUED.")
+            try:
+                await self._update_task_status(payload.task_id, TaskStatus.QUEUED.value)
+            except Exception as reset_err:
+                logger.error(f"Failed to reset cancelled task status: {reset_err}")
+            raise
         except Exception as e:
             logger.error(f"Critical error processing task {payload.task_id}: {e}")
+            await self._update_task_status(payload.task_id, TaskStatus.FAILED.value)
             await self.consumer.send_to_dlq(payload, str(e))
+            # Also evaluate completion here
+            await self._evaluate_scan_completion(payload.scan_id)
         finally:
             self.semaphore.release()
 
@@ -321,7 +334,7 @@ class WorkerEngine:
                     except Exception as pub_err:
                         logger.warning(f"Failed to publish task update: {pub_err}")
 
-                    await self._evaluate_scan_completion(str(db_task.scan_id))
+                    pass
             except Exception as e:
                 await session.rollback()
                 logger.error(f"Database error saving response for {task_id_str}: {e}")

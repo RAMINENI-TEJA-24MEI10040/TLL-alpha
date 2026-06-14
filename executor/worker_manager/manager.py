@@ -1,8 +1,15 @@
 import asyncio
 import logging
+from datetime import datetime, timezone, timedelta
 from typing import List, Dict
 from executor.task_queue.redis_client import RedisClient
+from executor.task_queue.models import QueuePayload
+from executor.task_queue.publisher import QueuePublisher
 from executor.workers.engine import WorkerEngine
+from sqlalchemy import select
+from sqlalchemy.orm import selectinload
+from executor.persistence.database import AsyncSessionLocal
+from executor.persistence.models import Task, TaskStatus, ScanStatus
 from executor.metrics.prometheus import EXECUTOR_ACTIVE_WORKERS, EXECUTOR_QUEUE_DEPTH
 
 logger = logging.getLogger(__name__)
@@ -26,6 +33,9 @@ class WorkerPoolManager:
         """Start the auto-scaling pool manager."""
         self._running = True
         logger.info(f"Starting WorkerPoolManager (min: {self.min_workers}, max: {self.max_workers})")
+
+        # Recover any stale tasks left in PROCESSING state before starting workers
+        await self._recover_stale_tasks()
         
         # Start minimum workers
         await self._scale_up(self.min_workers)
@@ -62,6 +72,7 @@ class WorkerPoolManager:
 
     async def _monitor_loop(self):
         """Background loop evaluating policies."""
+        iteration = 0
         while self._running:
             try:
                 queue_depth = await self._get_total_queue_depth()
@@ -82,6 +93,11 @@ class WorkerPoolManager:
                 
                 # Update Prometheus metrics
                 EXECUTOR_ACTIVE_WORKERS.set(len(self.active_engines))
+                
+                # Periodically recover stale tasks (every 30 seconds)
+                iteration += 1
+                if iteration % 6 == 0:
+                    await self._recover_stale_tasks()
                 
             except Exception as e:
                 logger.error(f"Error in ScalingEngine loop: {e}")
@@ -116,6 +132,57 @@ class WorkerPoolManager:
             self.active_engines.append(engine)
             # Run in background
             asyncio.create_task(engine.start())
+
+    async def _count_active_heartbeats(self) -> int:
+        """Count active worker heartbeat keys in Redis."""
+        count = 0
+        try:
+            async for _ in self.redis.scan_iter(match="worker:heartbeat:*"):
+                count += 1
+        except Exception as e:
+            logger.warning(f"Failed to count active heartbeats: {e}")
+        return count
+
+    async def _recover_stale_tasks(self):
+        """Recover stale tasks left in PROCESSING state after a previous crash or restart."""
+        cutoff = datetime.now(timezone.utc) - timedelta(seconds=max(self.idle_timeout * 3, 60))
+        recovered = 0
+
+        async with AsyncSessionLocal() as session:
+            stmt = select(Task).options(selectinload(Task.scan)).where(
+                Task.status == TaskStatus.PROCESSING.value,
+                Task.updated_at < cutoff
+            )
+            result = await session.execute(stmt)
+            stale_tasks = result.scalars().all()
+
+            if not stale_tasks:
+                return
+
+            publisher = QueuePublisher(queue_name=self.queue_base_name)
+            for task in stale_tasks:
+                if task.scan and task.scan.status in (ScanStatus.RUNNING.value, ScanStatus.PENDING.value):
+                    task.status = TaskStatus.QUEUED.value
+                    payload = QueuePayload(
+                        task_id=str(task.id),
+                        scan_id=str(task.scan_id),
+                        method=task.method,
+                        url=task.url,
+                        headers=task.headers,
+                        payload=task.payload,
+                        max_retries=task.max_retries,
+                        priority_level="P3"
+                    )
+                    await publisher.publish(payload)
+                    recovered += 1
+                else:
+                    task.status = TaskStatus.FAILED.value
+                    logger.info(f"Marked stale task {task.id} as FAILED because scan status is {task.scan.status if task.scan else 'None'}")
+
+            await session.commit()
+
+        if recovered > 0:
+            logger.info(f"Recovered and requeued {recovered} stale PROCESSING task(s).")
 
     async def _cleanup_idle_workers(self):
         """Terminates workers that are idle beyond threshold, respecting min_workers."""
