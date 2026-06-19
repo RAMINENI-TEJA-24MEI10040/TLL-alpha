@@ -263,4 +263,3 @@ Prometheus metrics exposed at `/metrics`:
 
 ---
 
-*Built by the Core Security Engine Team | TrustLayer Labs 2026*
